@@ -1,4 +1,295 @@
 # mianjin
+# 什么是可重入锁？什么是排他锁？这两个有啥关系？Java里有哪些相关内容
+## 锁
+好的，这是一个关于并发编程非常核心的概念。我们来彻底讲清楚。
+
+---
+
+### 1. 排他锁 (Exclusive Lock)
+
+**核心思想**：**“独享”**。就像厕所的**独立单间**。
+
+*   **定义**：排他锁也叫互斥锁。它保证在同一时间，只有一个线程能持有该锁，并访问被锁保护的资源或代码段。
+*   **类比**：一个厕所只有一个坑位（锁），一次只能一个人（线程）用。其他人（线程）必须在门口排队等待，直到里面的人出来（释放锁）。
+*   **目的**：保证共享资源的**原子性**和**可见性**，避免数据竞争和不一致。
+*   **Java中的典型代表**：
+    *   `synchronized` 关键字（隐式锁）
+    *   `ReentrantLock`（默认模式）
+    *   读写锁中的**写锁**
+
+---
+
+### 2. 可重入锁 (Reentrant Lock)
+
+**核心思想**：**“可重复进入”**。就像**有钥匙的人可以反复进入自家大门**。
+
+*   **定义**：指的是一个线程在已经持有某个锁的情况下，可以再次成功获取**同一个锁**，而不会被自己阻塞。
+*   **为什么需要它？** 防止**死锁**。考虑以下场景：
+    ```java
+    public synchronized void methodA() {
+        methodB(); // 如果锁不可重入，这里就会死锁！
+    }
+
+    public synchronized void methodB() {
+        // do something
+    }
+    ```
+    *   线程T进入 `methodA()`，获得了 `this` 对象锁。
+    *   `methodA()` 内部调用 `methodB()`，而 `methodB()` 也需要获取 `this` 对象锁。
+    *   **如果锁不可重入**：T已经持有锁，但尝试再次获取时会被阻塞。T会永远等待一个自己持有的锁，导致死锁。
+    *   **如果锁可重入**：JVM会识别出这个锁已经是T持有的，于是直接放行，并增加一个持有计数（+1）。当 `methodB()` 执行完毕，计数减一；`methodA()` 执行完毕，计数归零，锁才真正释放。
+
+*   **实现机制**：内部维护一个**持有线程的引用**和一个**计数器**。同一线程每次获取锁，计数器+1；每次释放锁，计数器-1；计数器为0时，才真正释放锁。
+
+*   **Java中的典型代表**：
+    *   **所有的 `synchronized` 锁都是可重入的**。这是JVM内置的特性。
+    *   `java.util.concurrent.locks.ReentrantLock`，看名字就知道，它也是可重入的。
+
+---
+
+### 3. 两者的关系：不是对立，而是维度不同
+
+这是一个非常关键的理解点。**可重入性和排他性是从两个不同维度来描述锁的特性**，它们不是非此即彼的对立关系。
+
+| 维度 | 描述 | 例子 |
+| :--- | :--- | :--- |
+| **锁的访问策略** | **排他 vs 共享** | **排他锁**（如写锁） vs **共享锁**（如读锁） |
+| **锁的持有策略** | **可重入 vs 不可重入** | **可重入锁**（如`synchronized`） vs **不可重入锁**（需自己实现） |
+
+你可以把它们想象成一个二维分类：
+
+
+**所以，一个锁完全可以既是排他锁，又是可重入锁。** 事实上，在Java中，我们最常用的锁（`synchronized` 和 `ReentrantLock`）都是**可重入的排他锁**。
+
+它们同时具备了两种特性：
+1.  **排他性**：保证线程安全，一次只有一个线程能执行。
+2.  **可重入性**：防止同一线程在锁内部调用其他同步方法时发生死锁。
+
+---
+
+### 4. Java中的相关内容与实践
+
+#### 1. synchronized (内置锁/隐式锁)
+```java
+public class SynchronizedExample {
+    // 这是一个可重入的排他锁
+    public synchronized void outer() {
+        System.out.println("Outer method");
+        inner(); // 可重入：线程可以再次进入同一个锁保护的inner方法
+    }
+
+    public synchronized void inner() {
+        System.out.println("Inner method");
+    }
+}
+```
+
+#### 2. ReentrantLock (显式锁)
+`ReentrantLock` 是 `synchronized` 的增强版，提供了更多高级功能，如**尝试获取锁、公平锁、可中断的锁等待、条件变量**等。
+
+```java
+import java.util.concurrent.locks.ReentrantLock;
+
+public class ReentrantLockExample {
+    private final ReentrantLock lock = new ReentrantLock(); // 创建一个可重入的排他锁
+
+    public void outer() {
+        lock.lock(); // 获取锁
+        try {
+            System.out.println("Outer method");
+            inner(); // 可重入：可以再次lock()
+        } finally {
+            lock.unlock(); // 必须在finally中释放锁！
+        }
+    }
+
+    public void inner() {
+        lock.lock(); // 再次获取同一个锁
+        try {
+            System.out.println("Inner method");
+        } finally {
+            lock.unlock(); // 释放一次
+        }
+    }
+    // outer()中lock()了2次，所以也需要unlock()2次，锁才会真正释放。
+}
+```
+
+#### 3. ReentrantReadWriteLock (读写锁)
+它展示了**排他锁（写锁）** 和**共享锁（读锁）** 的区别，但其中的读锁和写锁**本身都是可重入的**。
+
+*   **写锁 (WriteLock)**：**排他且可重入**。就像`synchronized`，一次只有一个线程能持有写锁。
+*   **读锁 (ReadLock)**：**共享且可重入**。多个线程可以同时持有读锁，但不允许有写锁存在。
+
+```java
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+public class ReadWriteLockExample {
+    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private final ReentrantReadWriteLock.ReadLock readLock = rwLock.readLock();
+    private final ReentrantReadWriteLock.WriteLock writeLock = rwLock.writeLock();
+
+    // 读操作：多个线程可同时进入
+    public String read() {
+        readLock.lock(); // 获取共享的、可重入的读锁
+        try {
+            // ... 读取数据
+            return data;
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    // 写操作：一次只有一个线程可进入
+    public void write(String newData) {
+        writeLock.lock(); // 获取排他的、可重入的写锁
+        try {
+            // ... 写入数据
+        } finally {
+            writeLock.unlock();
+        }
+    }
+}
+```
+
+---
+
+### 总结对比
+
+| 特性 | 排他锁 (Exclusive Lock) | 可重入锁 (Reentrant Lock) |
+| :--- | :--- | :--- |
+| **核心概念** | 锁的**访问策略**：一次只有一个线程能持有。 | 锁的**持有策略**：持有锁的线程可以再次获取它。 |
+| **对立面** | **共享锁** (如 `ReadWriteLock` 中的读锁) | **不可重入锁** (Java标准库没有，需自定义) |
+| **关系** | **维度不同，互不排斥**。常见的锁（如`synchronized`）同时具备这两种特性。 | |
+| **Java代表** | `synchronized`, `ReentrantLock`, `ReentrantReadWriteLock.WriteLock` | `synchronized`, `ReentrantLock`, `ReentrantReadWriteLock.ReadLock/WriteLock` |
+| **主要目的** | 保证数据操作的**原子性和一致性**。 | 防止**线程自死锁**，提高代码设计的灵活性。 |
+
+**一句话概括**：我们平时用的 `synchronized` 和 `ReentrantLock` 都是**可重入的排他锁**。它们既能保证线程安全（排他），又能让同一线程无障碍地进入嵌套的同步代码块（可重入）。
+
+# 为什么数据库连接 文件流 线程池等不指定关闭会引起内存泄露？这些资源不会被gc回收吗
+## 内存泄漏 gc
+这是一个非常核心且重要的问题。你问到了点子上。简单来说：**这些资源不会被GC回收，或者更准确地说，GC无法回收它们所代表的底层系统资源。**
+
+GC（Garbage Collector）是Java虚拟机（JVM）的一部分，它只能管理**JVM堆内存**中的对象。而数据库连接、文件流、线程池等，涉及的是**JVM之外的操作系统资源**。
+
+下面我们来详细拆解这个问题。
+
+---
+
+### 1. GC 能回收什么？不能回收什么？
+
+*   **GC能回收的**：在JVM堆上创建的Java对象（例如，一个 `FileInputStream` 对象实例本身所占用的那几十个字节的内存）。
+*   **GC不能回收的**：Java对象背后所持有的**本地资源（Native Resources）**，例如：
+    *   **文件句柄（File Handle）**：操作系统分配给一个打开文件的标识符。
+    *   **套接字（Socket）**：网络连接的端点。
+    *   **数据库连接（Database Connection）**：与数据库服务器建立的TCP连接及其在服务器端的状态。
+    *   **直接内存（Direct Memory）**：通过 `ByteBuffer.allocateDirect()` 分配的，存在于JVM堆外的内存。
+
+这些资源是由**操作系统**或**外部系统（如数据库）** 分配和管理的。
+
+### 2. 内存泄露是如何发生的？（以文件流为例）
+
+我们来看一个典型的“资源泄露”过程：
+
+```java
+public void readFile() {
+    try {
+        FileInputStream fis = new FileInputStream("huge_file.txt"); // 1. 创建Java对象，并申请系统资源（文件句柄）
+        // ... 读取文件操作
+        // 忘记调用 fis.close();
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+    // 2. 方法结束，fis 局部变量超出作用域，FileInputStream 对象不可达。
+    // 3. 在未来的某个时刻，GC 会回收这个 FileInputStream 对象在堆上占用的少量内存。
+}
+```
+
+**关键点在于**：
+1.  当你 `new FileInputStream(...)` 时，发生了两件事：
+    *   **在JVM堆上**创建了一个Java对象（`fis`）。
+    *   **在操作系统层面**，通过JNI（Java Native Interface）调用，打开了一个文件，并获取了一个“文件句柄”。这个句柄是操作系统资源。
+
+2.  当你“忘记关闭”时，只做了 `fis = null;` 或等待方法结束，这只是切断了Java堆上的对象引用。
+
+3.  GC工作后，会发现这个 `FileInputStream` 对象已经没有任何引用了，于是**回收它在堆上占用的那几十个字节的内存**。
+
+4.  **但是**，GC**完全不知道**这个Java对象背后还关联着一个操作系统的文件句柄。它没有能力去调用操作系统的 `close()` 系统调用来释放这个句柄。
+
+5.  最终结果：**Java对象被回收了，但系统的文件句柄被永久占用了**。
+
+**泄露的后果**：
+*   每个进程能打开的文件句柄数量是有限的（可以通过 `ulimit -n` 查看）。
+*   如果你的程序反复执行上述方法，就会不断泄露文件句柄。
+*   当泄露的句柄数达到系统上限时，再尝试打开新文件或建立数据库连接，就会抛出 `IOException: Too many open files` 错误，导致程序崩溃。
+
+**这个过程就是“资源泄露”，它最终会导致内存泄露或其他系统资源耗尽的问题。**
+
+---
+
+### 3. 各类资源的泄露原理
+
+| 资源类型 | Java对象 | 底层系统资源 | 泄露后果 |
+| :--- | :--- | :--- | :--- |
+| **数据库连接** | `Connection` 对象 | 1. TCP Socket 连接<br>2. 数据库服务器端的会话和缓冲区 | 1. 客户端端口耗尽<br>2. 数据库连接数达到上限，拒绝新连接 |
+| **文件流** | `FileInputStream`/`FileOutputStream` | 操作系统的文件句柄 | `Too many open files` 错误 |
+| **线程池** | `ExecutorService` 对象 | 池中的工作线程（也是系统资源） | 线程无法正常结束，JVM无法正常关闭（非守护线程会阻止JVM退出） |
+| **网络Socket** | `Socket`/`ServerSocket` | 操作系统的Socket描述符和端口 | 端口耗尽，无法建立新的网络连接 |
+
+### 4. 如何正确关闭资源？(现代最佳实践)
+
+传统的方式是使用 `try-finally`，但现代Java（Java 7+）强烈推荐使用 **try-with-resources** 语句。
+
+**传统方式（容易写错或忘记）：**
+```java
+FileInputStream fis = null;
+try {
+    fis = new FileInputStream("file.txt");
+    // ... 使用流
+} finally {
+    if (fis != null) {
+        try {
+            fis.close(); // 在finally块中手动关闭
+        } catch (IOException e) {
+            // 处理关闭异常
+        }
+    }
+}
+```
+
+**现代方式（自动、安全、简洁）：**
+```java
+// 实现了 AutoCloseable 接口的类都可以放在这里
+try (FileInputStream fis = new FileInputStream("file.txt");
+     FileOutputStream fos = new FileOutputStream("output.txt")) {
+    // ... 使用流
+} catch (IOException e) {
+    e.printStackTrace();
+}
+// 无论是否发生异常，离开try块后JVM会自动调用 fis.close() 和 fos.close()
+```
+
+**对于线程池**，同样需要在应用关闭时显式调用 `shutdown()` 或 `shutdownNow()`。
+
+```java
+ExecutorService executor = Executors.newFixedThreadPool(10);
+// ... 提交任务
+// 应用结束时
+executor.shutdown(); // 平缓关闭：停止接收新任务，等待已提交任务完成
+// executor.shutdownNow(); // 立即关闭：尝试中断所有正在执行的任务
+```
+
+---
+
+### 总结
+
+| 问题 | 答案 |
+| :--- | :--- |
+| **GC会回收这些资源吗？** | **不会**。GC只能回收JVM堆内存中的Java对象，无法释放其背后的操作系统资源（文件句柄、网络连接等）。 |
+| **为什么会内存泄露？** | Java对象被GC回收后，其占用的**堆内存**被释放了，但**系统资源**没有被释放。这些资源会一直累积，直到耗尽，导致程序因申请不到新资源而崩溃。这是一种更广义的“资源泄露”。 |
+| **如何避免？** | **必须显式地关闭**。使用 `try-with-resources` 语句是首选方案，它可以确保资源被正确、自动地关闭，即使发生异常也是如此。 |
+
+
 # 详细解释innodb的MVCC机制
 ## 数据库 innodb MVCC
 
