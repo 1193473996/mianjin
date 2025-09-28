@@ -12,4 +12,6 @@ loadstore：读1写2，写2前保证读1已完成
 storestore：写1写2，写2前保证写1完成
 storeload：写1读2，读2前保证写1完成
 
+volatile读后+loadload、loadstore屏障
+volatile写前+storestore，后+storeload屏障
 
