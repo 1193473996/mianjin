@@ -1,4 +1,4 @@
-# JUC
+ # JUC
 ## volatile
 1、写volatile变量会强制写回主存
 2、读volatile变量会清除线程缓存，强制到主存读取
@@ -6,7 +6,7 @@
 原理为内存屏障：是一个同步点，使同步点前的所有读写操作都执行完成后才执行此点之后的操作，并且操作之前的写操作都会写回主存
 读屏障：读指令之前，让工作内存缓存失效；
 写屏障：写指令之后，工作内存写回主存；
-底层Unsafe.class
+底层加ACC_Volatile关键字，Unsafe.class
 loadload：读1读2间，保证读1后再读2
 loadstore：读1写2，写2前保证读1已完成
 storestore：写1写2，写2前保证写1完成
@@ -15,3 +15,17 @@ storeload：写1读2，读2前保证写1完成
 volatile读后+loadload、loadstore屏障
 volatile写前+storestore，后+storeload屏障
 
+懒汉式单例在对象上+volatile关键字
+目的是防止指令重排序，因为singleton=new xx()是复合操作，包括1）申请内存；2）初始化对象；3）设置singleton指向内存；
+其中2）3）可能会被重排序，导致其他线程取到null的对象；
+
+
+# CAS
+底层是CPU的原子指令
+Unsafe类的本地方法，compareAndSwapInt()
+方法先获取变量值，如果值与期望值不同则自旋（底层是do-while循环），否则更新值；
+汇编层级会禁止变量两侧的指令优化，使用cmpxchg指令更新；
+AtomicReference<Object>可以定义任何对象的原子类型，调用CAS方法；
+缺点：
+1）CAS长时间不成功，自旋CPU空转
+2）ABA问题：线程1取出A，线程2取出并改写为B，又改回A，线程1CAS时成功；虽成功但过程有问题；（使用版本号记录更新流水记录，更新时校验版本号，AtomicStampedReference）
