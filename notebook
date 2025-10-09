@@ -29,3 +29,19 @@ AtomicReference<Object>可以定义任何对象的原子类型，调用CAS方法
 缺点：
 1）CAS长时间不成功，自旋CPU空转
 2）ABA问题：线程1取出A，线程2取出并改写为B，又改回A，线程1CAS时成功；虽成功但过程有问题；（使用版本号记录更新流水记录，更新时校验版本号，AtomicStampedReference）
+
+# AtomicIntegerFieldUpdater
+以线程安全的方式操作非线程安全对象内某些字段，相较于synchronized的对象锁，该方法只锁局部
+操作对象修饰为public volatile，通过反射
+
+#ThreadLocal
+底层原理ThreadLocal并不存储值，只是作为key从ThreadLocalMap获取value，static的ThreadLocalMap保存，ThreadLocal为key，任意对象Entry为value
+底层弱引用，假设如果是强引用，线程结束没回收的将导致内存泄漏（ThreadLocal引用置为null后，Map中存key=null，value有对象，线程池场景存在强引用链，无法GC回收）；
+remove()方法会查找key=null的Entry并清除
+
+
+强：Reference，最常见，new出来的，GC不回收，显式置为null才可能被回收；
+软：SoftReference，内存充足不回收，不够才回收，高速缓存场景用；
+弱：WeakReference，只要GC就回收；
+（大图片场景，图片缓存Map中K-V，V存软引用，不足时自动回收）
+虚：PhantomReference，必须和引用队列ReferenceQueue同时使用，单独虚引用无意义（get方法总是返回null），使用场景即对象被回收前的通知
