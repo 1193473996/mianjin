@@ -45,3 +45,15 @@ remove()方法会查找key=null的Entry并清除
 弱：WeakReference，只要GC就回收；
 （大图片场景，图片缓存Map中K-V，V存软引用，不足时自动回收）
 虚：PhantomReference，必须和引用队列ReferenceQueue同时使用，单独虚引用无意义（get方法总是返回null），使用场景即对象被回收前的通知
+
+
+# synchronized锁升级
+无锁-->偏向锁-->轻量级锁-->重量级锁
+对象头MarkWord三个byte位标识
+早期synchronized加锁需要用户态和内核态切换，操作系统介入进行线程唤醒或阻塞
+知识点|无锁|偏向锁|轻量级锁|重量级锁
+存储|X|存储偏向的线程ID|存储指向线程栈中Lock Record的指针|存储指向堆中monitor对象的指针
+markword标识|000|101|
+场景|无|一个线程访问，偏向锁偏向于第一个访问锁的线程|
+处理流程||判断当前线程ID与偏向线程ID是否一致，一致直接进入同步块，无需CAS更新对象头；不是则发生竞争CAS替换偏向线程ID；CAS更新成功则竞争成功；竞争失败可能升级为轻量级锁；|
+
